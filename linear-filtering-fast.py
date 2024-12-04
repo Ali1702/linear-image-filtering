@@ -2,43 +2,51 @@ from PIL import Image
 import numpy as np
 import os
 
+def parse_weights(size, non_zero_entries):
+    weights = np.zeros((size, size), dtype=int)
+    for row, col, value in non_zero_entries:
+        weights[row - 1, col - 1] = value  # convert 1-based to 0-based indexing
+    return weights
+
 def apply_filter(image_path, weights, scale, offset):
     # load image and convert to numpy array
     image = Image.open(image_path).convert("RGB")
-    img_array = np.array(image)
+    img_array = np.array(image, dtype=np.int32)
 
     # kernel size
-    kernel_size = len(weights)
+    kernel_size = weights.shape[0]
     pad = kernel_size // 2
 
     # pad image with zeros to handle borders
     padded_img = np.pad(img_array, ((pad, pad), (pad, pad), (0, 0)), mode='constant', constant_values=0)
 
-    # output image array
+    # initialize the output image
     output_img = np.zeros_like(img_array, dtype=np.int32)
 
-    # loop through each pixel
-    for y in range(pad, padded_img.shape[0] - pad):
-        print(f"Processing row {y}/{padded_img.shape[0] - pad - 1}")
-        for x in range(pad, padded_img.shape[1] - pad):
-            for c in range(3):  # RGB channels
-                # apply filter
-                region = padded_img[y-pad:y+pad+1, x-pad:x+pad+1, c]
-                result = np.sum(region * weights) / scale + offset
-                output_img[y-pad, x-pad, c] = np.clip(result, 0, 255)
+    # vectorized convolution for each channel
+    for c in range(3):  # RGB channels
+        # extract channel and convolve
+        for dy in range(kernel_size):
+            for dx in range(kernel_size):
+                output_img[:, :, c] += weights[dy, dx] * padded_img[dy:dy+img_array.shape[0], dx:dx+img_array.shape[1], c]
+    
+    # apply scale and offset
+    output_img = output_img // scale + offset
+    output_img = np.clip(output_img, 0, 255)
 
     # convert result to a PIL image
-    filtered_image = Image.fromarray(output_img.astype(np.uint8))
-    return filtered_image
+    return Image.fromarray(output_img.astype(np.uint8))
 
 if __name__ == "__main__":
+    # user input for filter parameters
     print("Welcome to the Image Filter Tool!")
 
+    # input image path
     image_path = "images/input/input_image2.jpg" # change this accordingly
     if not os.path.exists(image_path):
         print("Image file not found:", image_path)
         exit()
-        
+
     # input kernel size
     while True:
         try:
@@ -66,13 +74,9 @@ if __name__ == "__main__":
             print("Invalid input:", e)
 
     # generate weights matrix
-    weights = np.zeros((kernel_size, kernel_size), dtype=int)
-    for row, col, value in non_zero_entries:
-        weights[row - 1][col - 1] = value  # convert 1-based to 0-based indexing
-
+    weights = parse_weights(kernel_size, non_zero_entries)
     print("Generated weight matrix:")
-    for row in weights:
-        print(row)
+    print(weights)
 
     # input scale and offset
     while True:
